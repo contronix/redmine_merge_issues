@@ -1,8 +1,9 @@
 require 'redmine'
-
-Rails.application.config.to_prepare do
-  require_dependency 'redmine_merge_issues/hooks'
-end
+# Force-load the hook class on plugin init so Redmine::Hook::ViewListener.inherited
+# fires immediately. The original `Rails.application.config.to_prepare do
+# require_dependency '...' end` pattern does NOT load the file under Rails 7 +
+# Zeitwerk, leaving the hook unregistered (no merge button on the issue page).
+require_relative 'lib/redmine_merge_issues/hooks'
 
 Redmine::Plugin.register :redmine_merge_issues do
   name        'Merge Issues'
@@ -15,5 +16,5 @@ Redmine::Plugin.register :redmine_merge_issues do
   requires_redmine version_or_higher: '6.0'
 
   permission :merge_issues,
-             { merge_issues: [:new, :create] }
+             { merge_issues: [:new, :create, :new_multiple, :create_multiple] }
 end

@@ -1,0 +1,15 @@
+<%# Context-menu entry for the issue list (hook :view_issues_context_menu_end).
+    Locals come from the hook context: issues (selected issues), can, back. %>
+<% merge_allowed = issues.map(&:project).uniq.all? { |project| User.current.allowed_to?(:merge_issues, project) } %>
+<li>
+  <% if issues.size == 1 %>
+    <%# Single selection: reuse the regular per-issue merge screen %>
+    <%= context_menu_link sprite_icon('bullet-go', l(:button_merge)),
+                          new_issue_merge_path(issues.first),
+                          class: 'icon icon-bullet-go', disabled: !merge_allowed %>
+  <% else %>
+    <%= context_menu_link sprite_icon('bullet-go', l(:button_merge)),
+                          new_merge_issues_path(ids: issues.map(&:id)),
+                          class: 'icon icon-bullet-go', disabled: !merge_allowed %>
+  <% end %>
+</li>

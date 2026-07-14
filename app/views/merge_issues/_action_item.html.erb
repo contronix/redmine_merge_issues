@@ -1,4 +1,4 @@
-<%# Rendu uniquement si l'utilisateur a la permission de fusionner %>
+<%# Rendered only if the current user is allowed to merge issues on this project %>
 <% if User.current.allowed_to?(:merge_issues, issue.project) %>
   <template id="merge-drdn-item">
     <%= link_to sprite_icon('bullet-go', l(:button_merge)), new_issue_merge_path(issue),

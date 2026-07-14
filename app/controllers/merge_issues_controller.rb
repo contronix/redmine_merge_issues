@@ -1,8 +1,15 @@
 # frozen_string_literal: true
 
 class MergeIssuesController < ApplicationController
-  before_action :find_issue
-  before_action :authorize
+  # `helper :custom_fields` makes `show_value` available on view_context, which
+  # is used by snapshot_source_custom_values below. Redmine's ApplicationController
+  # does NOT do `helper :all`, so each controller must include the helpers it needs.
+  helper :custom_fields
+
+  before_action :find_issue, only: [:new, :create]
+  before_action :authorize, only: [:new, :create]
+  before_action :find_selected_issues, only: [:new_multiple, :create_multiple]
+  before_action :authorize_selected_issues, only: [:new_multiple, :create_multiple]
 
   # GET /issues/:issue_id/merge/new
   # Renders the merge modal (used via Turbo or plain AJAX)
@@ -56,6 +63,39 @@ class MergeIssuesController < ApplicationController
     end
   end
 
+  # GET /issues/merge/new?ids[]=1&ids[]=2
+  # Lets the user pick which of the selected issues to keep (destination)
+  def new_multiple
+  end
+
+  # POST /issues/merge
+  # Merges every selected issue except the destination into the destination,
+  # deleting each source issue.
+  def create_multiple
+    destination = @issues.detect { |issue| issue.id == params[:destination_id].to_i }
+
+    unless destination
+      flash[:error] = l(:error_merge_destination_not_found)
+      return redirect_to new_merge_issues_path(ids: @issues.map(&:id))
+    end
+
+    sources = @issues - [destination]
+
+    begin
+      ActiveRecord::Base.transaction do
+        sources.each { |source| merge_issues!(source, destination) }
+      end
+      flash[:notice] = l(:notice_merge_multiple_success,
+                         sources: sources.map { |s| "##{s.id}" }.join(', '),
+                         destination: destination.id)
+      redirect_to issue_path(destination)
+    rescue StandardError => e
+      Rails.logger.error("[MergeIssues] Multiple merge failed: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
+      flash[:error] = l(:error_merge_failed)
+      redirect_to new_merge_issues_path(ids: @issues.map(&:id))
+    end
+  end
+
   private
 
   def find_issue
@@ -67,6 +107,22 @@ class MergeIssuesController < ApplicationController
 
   def authorize
     unless User.current.allowed_to?(:merge_issues, @issue.project)
+      deny_access
+    end
+  end
+
+  # Loads the issues selected from the issue list (ids[] param).
+  # 404 if fewer than two are requested or any of them is missing/not visible.
+  def find_selected_issues
+    ids = Array(params[:ids]).map(&:to_i).uniq.reject(&:zero?)
+    @issues = Issue.visible.where(id: ids).sort_by(&:id)
+
+    render_404 if @issues.size < 2 || @issues.size != ids.size
+  end
+
+  # All impacted projects require the merge permission.
+  def authorize_selected_issues
+    unless @issues.map(&:project).uniq.all? { |project| User.current.allowed_to?(:merge_issues, project) }
       deny_access
     end
   end
@@ -171,7 +227,39 @@ class MergeIssuesController < ApplicationController
     journal.notify = false
     destination.save!
 
+    # 11bis. Snapshot the source's custom field values as a *private* journal note
+    # on the destination. acts_as_customizable declares custom_values with
+    # `dependent: :delete_all`, so step 12 hard-deletes them — without this
+    # snapshot the values would be lost. The note is private so the data is
+    # available to users with `view_private_notes` permission only.
+    snapshot_source_custom_values(source, destination)
+
     # 12. Destroy source issue (skips callbacks that might be slow; adjust if needed)
     source.destroy
+  end
+
+  # Builds a private journal note on `destination` containing each non-blank
+  # custom field value from `source`, formatted with the same helper Redmine
+  # uses on the issue page (so enumeration / user / version values are shown by
+  # name, not by id). Skipped when the source has no non-blank values.
+  def snapshot_source_custom_values(source, destination)
+    cfvs = source.visible_custom_field_values.reject { |cfv| cfv.value.blank? }
+    return if cfvs.empty?
+
+    body_lines = cfvs.map do |cfv|
+      "**#{cfv.custom_field.name}**\n#{view_context.show_value(cfv, false)}"
+    end
+
+    note_body = "#{l(:label_merge_source_custom_fields_heading, id: source.id)}\n\n" \
+                "#{body_lines.join("\n\n")}"
+
+    journal = Journal.new(
+      journalized: destination,
+      user: User.current,
+      notes: note_body,
+      private_notes: true
+    )
+    journal.notify = false
+    journal.save!
   end
 end

@@ -1,0 +1,23 @@
+<%# app/views/merge_issues/new_multiple.html.erb %>
+<div class="contextual">
+  <%= link_to l(:button_back), issues_path, :class => 'icon icon-back' %>
+</div>
+
+<h2><%= l(:label_merge_multiple_screen_title) %></h2>
+
+<%= form_tag(merge_issues_path, method: :post) do %>
+  <% @issues.each do |issue| %>
+    <%= hidden_field_tag 'ids[]', issue.id, id: nil %>
+  <% end %>
+  <div class="box">
+    <p><%= l(:label_merge_multiple_hint) %></p>
+    <% @issues.each do |issue| %>
+      <label class="block">
+        <%= radio_button_tag :destination_id, issue.id, issue == @issues.first %>
+        #<%= issue.id %> — <%= issue.subject %> (<%= issue.project.name %>)
+      </label>
+    <% end %>
+  </div>
+  <%= submit_tag l(:button_merge), :class => 'button-positive' %>
+  <%= link_to l(:button_cancel), issues_path, :class => 'button' %>
+<% end %>

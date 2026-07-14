@@ -7,5 +7,11 @@ module RedmineMergeIssues
     # Le JS merge_issues.js le déplace ensuite dans le menu "..." (.drdn-items).
     render_on :view_issues_show_description_bottom,
               partial: 'merge_issues/action_item'
+
+    # Adds a "Merge" entry to the issue-list context menu (right click /
+    # actions on selected rows). With one issue selected it opens the regular
+    # merge screen; with several it opens the destination-picker screen.
+    render_on :view_issues_context_menu_end,
+              partial: 'merge_issues/context_menu'
   end
 end
